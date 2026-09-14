@@ -19,3 +19,69 @@ export async function fetchMenu(menuId: string): Promise<Menu> {
 
   return response.json();
 }
+
+type CreateAdminMenuRequest = {
+  adminCode: string;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  imageUrl: string;
+};
+
+export async function createAdminMenu(menu: CreateAdminMenuRequest): Promise<Menu> {
+  const response = await fetch('/api/admin/menus', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(menu)
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message ?? '메뉴를 추가하지 못했습니다.');
+  }
+
+  return data;
+}
+
+export async function updateAdminMenu(
+  menuId: number,
+  menu: CreateAdminMenuRequest
+): Promise<Menu> {
+  const response = await fetch(`/api/admin/menus/${menuId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(menu)
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message ?? '메뉴를 수정하지 못했습니다.');
+  }
+
+  return data;
+}
+
+export async function hideAdminMenu(menuId: number, adminCode: string) {
+  const response = await fetch(`/api/admin/menus/${menuId}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ adminCode })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message ?? '메뉴를 숨기지 못했습니다.');
+  }
+
+  return data;
+}

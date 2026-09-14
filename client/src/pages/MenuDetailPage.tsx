@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { fetchMenu } from '../api/menuApi';
+import { CartSidebar } from '../components/CartSidebar';
 import { useCart } from '../context/CartContext';
 import type { DrinkSize, Temperature } from '../types/cart';
 import type { Menu } from '../types/menu';
@@ -9,7 +10,6 @@ const largeSizeExtraPrice = 500;
 
 export function MenuDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { addItem } = useCart();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [temperature, setTemperature] = useState<Temperature>('ICE');
@@ -62,8 +62,6 @@ export function MenuDetailPage() {
       quantity,
       unitPrice
     });
-
-    navigate('/cart');
   }
 
   if (isLoading) {
@@ -91,80 +89,84 @@ export function MenuDetailPage() {
         메뉴로 돌아가기
       </Link>
 
-      <section className="detail-layout">
-        <div className="detail-image">
-          {menu.imageUrl ? <img src={menu.imageUrl} alt={menu.name} /> : <span>Drink</span>}
-        </div>
+      <div className="menu-shell">
+        <section className="detail-layout">
+          <div className="detail-image">
+            {menu.imageUrl ? <img src={menu.imageUrl} alt={menu.name} /> : <span>Drink</span>}
+          </div>
 
-        <div className="detail-panel">
-          <p className="menu-card__category">{menu.category}</p>
-          <h1>{menu.name}</h1>
-          <p>{menu.description}</p>
-          <strong className="base-price">기본 가격 {menu.price.toLocaleString()}원</strong>
+          <div className="detail-panel">
+            <p className="menu-card__category">{menu.category}</p>
+            <h1>{menu.name}</h1>
+            <p>{menu.description}</p>
+            <strong className="base-price">기본 가격 {menu.price.toLocaleString()}원</strong>
 
-          <div className="option-group">
-            <h2>온도</h2>
-            <div className="segmented-control">
-              <button
-                className={temperature === 'HOT' ? 'is-selected' : ''}
-                type="button"
-                onClick={() => setTemperature('HOT')}
-              >
-                HOT
-              </button>
-              <button
-                className={temperature === 'ICE' ? 'is-selected' : ''}
-                type="button"
-                onClick={() => setTemperature('ICE')}
-              >
-                ICE
-              </button>
+            <div className="option-group">
+              <h2>온도</h2>
+              <div className="segmented-control">
+                <button
+                  className={temperature === 'HOT' ? 'is-selected' : ''}
+                  type="button"
+                  onClick={() => setTemperature('HOT')}
+                >
+                  HOT
+                </button>
+                <button
+                  className={temperature === 'ICE' ? 'is-selected' : ''}
+                  type="button"
+                  onClick={() => setTemperature('ICE')}
+                >
+                  ICE
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="option-group">
-            <h2>사이즈</h2>
-            <div className="segmented-control">
-              <button
-                className={size === 'REGULAR' ? 'is-selected' : ''}
-                type="button"
-                onClick={() => setSize('REGULAR')}
-              >
-                Regular
-              </button>
-              <button
-                className={size === 'LARGE' ? 'is-selected' : ''}
-                type="button"
-                onClick={() => setSize('LARGE')}
-              >
-                Large +{largeSizeExtraPrice.toLocaleString()}원
-              </button>
+            <div className="option-group">
+              <h2>사이즈</h2>
+              <div className="segmented-control">
+                <button
+                  className={size === 'REGULAR' ? 'is-selected' : ''}
+                  type="button"
+                  onClick={() => setSize('REGULAR')}
+                >
+                  Regular
+                </button>
+                <button
+                  className={size === 'LARGE' ? 'is-selected' : ''}
+                  type="button"
+                  onClick={() => setSize('LARGE')}
+                >
+                  Large +{largeSizeExtraPrice.toLocaleString()}원
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="option-group">
-            <h2>수량</h2>
-            <div className="quantity-control">
-              <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))}>
-                -
-              </button>
-              <span>{quantity}</span>
-              <button type="button" onClick={() => setQuantity((value) => value + 1)}>
-                +
-              </button>
+            <div className="option-group">
+              <h2>수량</h2>
+              <div className="quantity-control">
+                <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))}>
+                  -
+                </button>
+                <span>{quantity}</span>
+                <button type="button" onClick={() => setQuantity((value) => value + 1)}>
+                  +
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="order-summary">
-            <span>총 금액</span>
-            <strong>{totalPrice.toLocaleString()}원</strong>
-          </div>
+            <div className="order-summary">
+              <span>총 금액</span>
+              <strong>{totalPrice.toLocaleString()}원</strong>
+            </div>
 
-          <button className="primary-button" type="button" onClick={handleAddCart}>
-            장바구니 담기
-          </button>
-        </div>
-      </section>
+            <button className="primary-button" type="button" onClick={handleAddCart}>
+              장바구니 담기
+            </button>
+          </div>
+        </section>
+
+        <CartSidebar />
+      </div>
     </main>
   );
 }

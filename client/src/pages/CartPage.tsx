@@ -1,20 +1,20 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 
 export function CartPage() {
+  const navigate = useNavigate();
   const { items, totalPrice, removeItem, clearCart } = useCart();
 
   return (
     <main className="page">
-      <header className="page-header">
-        <div>
-          <p>Cart</p>
-          <h1>장바구니</h1>
-        </div>
-        <Link className="cart-button" to="/">
-          메뉴 추가
-        </Link>
+      <header className="page-title">
+        <p>Cart</p>
+        <h1>장바구니</h1>
       </header>
+
+      <button className="secondary-button back-button" type="button" onClick={() => navigate(-1)}>
+        뒤로가기
+      </button>
 
       {items.length === 0 ? (
         <section className="empty-cart">
