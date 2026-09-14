@@ -14,7 +14,6 @@ export function MenuCard({ menu }: MenuCardProps) {
       <div className="menu-card__body">
         <p className="menu-card__category">{menu.category}</p>
         <h2>{menu.name}</h2>
-        <p>{menu.description}</p>
         <strong>{menu.price.toLocaleString()}원</strong>
       </div>
       <Link className="menu-card__link" to={`/menu/${menu.id}`}>
