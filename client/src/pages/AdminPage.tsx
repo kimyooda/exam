@@ -7,7 +7,52 @@ import {
   type OrderHistory
 } from '../api/orderApi';
 import { useAuth } from '../context/AuthContext';
-import type { Menu } from '../types/menu';
+import type { Menu, MenuOptionGroup } from '../types/menu';
+
+const menuCategoryOptions = [
+  { value: 'coffee', label: '커피' },
+  { value: 'non-coffee', label: '논커피' },
+  { value: 'ade', label: '에이드' },
+  { value: 'tea', label: '티' }
+];
+
+const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+const defaultMenuOptionGroups: MenuOptionGroup[] = [];
+
+function formatOptions(options: Array<{ groupName: string; optionLabel: string }>) {
+  return options.map((option) => `${option.groupName}: ${option.optionLabel}`).join(' / ');
+}
+
+function formatOrderItemOptions(item: {
+  selectedOptions: Array<{ groupName: string; optionLabel: string }>;
+  temperature: string;
+  size: string;
+}) {
+  return item.selectedOptions.length > 0 ? formatOptions(item.selectedOptions) : `${item.temperature} / ${item.size}`;
+}
+
+function getDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function getMonthDays(value: Date) {
+  const year = value.getFullYear();
+  const month = value.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDate = new Date(year, month + 1, 0).getDate();
+  const days: Array<Date | null> = Array.from({ length: firstDay.getDay() }, () => null);
+
+  for (let day = 1; day <= lastDate; day += 1) {
+    days.push(new Date(year, month, day));
+  }
+
+  return days;
+}
 
 function formatOrderStatus(status: string) {
   if (status === 'completed') {
@@ -25,6 +70,7 @@ function formatDate(value: string) {
 }
 
 export function AdminPage() {
+  const today = new Date();
   const { identifier, role } = useAuth();
   const [adminCode, setAdminCode] = useState(role === 'admin' ? identifier : '');
   const [orders, setOrders] = useState<OrderHistory[]>([]);
@@ -33,15 +79,23 @@ export function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isAddingMenu, setIsAddingMenu] = useState(false);
+  const [isDailySalesOpen, setIsDailySalesOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [visibleMonth, setVisibleMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [editingMenuId, setEditingMenuId] = useState<number | null>(null);
   const [menuForm, setMenuForm] = useState({
     name: '',
     description: '',
     category: '',
     price: '',
-    imageUrl: ''
+    imageUrl: '',
+    optionGroups: defaultMenuOptionGroups
   });
-  const salesSummary = orders.reduce(
+  const selectedDateKey = getDateKey(selectedDate);
+  const todayKey = getDateKey(today);
+  const monthDays = getMonthDays(visibleMonth);
+  const dailyOrders = orders.filter((order) => getDateKey(new Date(order.createdAt)) === selectedDateKey);
+  const dailySalesSummary = dailyOrders.reduce(
     (summary, order) => {
       const quantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -150,13 +204,27 @@ export function AdminPage() {
 
     try {
       setMessage('');
+      const optionGroups = menuForm.optionGroups
+        .map((group) => ({
+          ...group,
+          name: group.name.trim(),
+          options: group.options
+            .map((option) => ({
+              ...option,
+              label: option.label.trim(),
+              priceDelta: Number(option.priceDelta)
+            }))
+            .filter((option) => option.label)
+        }))
+        .filter((group) => group.name && group.options.length > 0);
       const menuPayload = {
         adminCode: adminCode.trim(),
         name: menuForm.name,
         description: menuForm.description,
         category: menuForm.category,
         price: Number(menuForm.price),
-        imageUrl: menuForm.imageUrl
+        imageUrl: menuForm.imageUrl,
+        optionGroups
       };
 
       if (editingMenuId) {
@@ -165,7 +233,14 @@ export function AdminPage() {
         await createAdminMenu(menuPayload);
       }
 
-      setMenuForm({ name: '', description: '', category: '', price: '', imageUrl: '' });
+      setMenuForm({
+        name: '',
+        description: '',
+        category: '',
+        price: '',
+        imageUrl: '',
+        optionGroups: defaultMenuOptionGroups
+      });
       setEditingMenuId(null);
       setIsAddingMenu(false);
       await loadMenus();
@@ -183,14 +258,95 @@ export function AdminPage() {
       description: menu.description,
       category: menu.category,
       price: String(menu.price),
-      imageUrl: menu.imageUrl ?? ''
+      imageUrl: menu.imageUrl ?? '',
+      optionGroups: menu.optionGroups.length > 0 ? menu.optionGroups : defaultMenuOptionGroups
     });
   }
 
   function handleCloseMenuForm() {
     setEditingMenuId(null);
     setIsAddingMenu(false);
-    setMenuForm({ name: '', description: '', category: '', price: '', imageUrl: '' });
+    setMenuForm({
+      name: '',
+      description: '',
+      category: '',
+      price: '',
+      imageUrl: '',
+      optionGroups: defaultMenuOptionGroups
+    });
+  }
+
+  function handleAddOptionGroup() {
+    setMenuForm((currentForm) => ({
+      ...currentForm,
+      optionGroups: [
+        ...currentForm.optionGroups,
+        {
+          id: crypto.randomUUID(),
+          name: '',
+          options: [{ id: crypto.randomUUID(), label: '', priceDelta: 0 }]
+        }
+      ]
+    }));
+  }
+
+  function handleUpdateOptionGroup(groupId: string, name: string) {
+    setMenuForm((currentForm) => ({
+      ...currentForm,
+      optionGroups: currentForm.optionGroups.map((group) =>
+        group.id === groupId ? { ...group, name } : group
+      )
+    }));
+  }
+
+  function handleAddOption(groupId: string) {
+    setMenuForm((currentForm) => ({
+      ...currentForm,
+      optionGroups: currentForm.optionGroups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              options: [...group.options, { id: crypto.randomUUID(), label: '', priceDelta: 0 }]
+            }
+          : group
+      )
+    }));
+  }
+
+  function handleUpdateOption(
+    groupId: string,
+    optionId: string,
+    field: 'label' | 'priceDelta',
+    value: string
+  ) {
+    setMenuForm((currentForm) => ({
+      ...currentForm,
+      optionGroups: currentForm.optionGroups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              options: group.options.map((option) =>
+                option.id === optionId
+                  ? {
+                      ...option,
+                      [field]: field === 'priceDelta' ? Number(value) : value
+                    }
+                  : option
+              )
+            }
+          : group
+      )
+    }));
+  }
+
+  function handleMonthChange(monthOffset: number) {
+    setVisibleMonth(
+      (currentMonth) => new Date(currentMonth.getFullYear(), currentMonth.getMonth() + monthOffset, 1)
+    );
+  }
+
+  function handleSelectDate(date: Date) {
+    setSelectedDate(date);
   }
 
   async function handleHideMenu(menuId: number) {
@@ -286,11 +442,18 @@ export function AdminPage() {
                       setMenuForm({ ...menuForm, description: event.target.value })
                     }
                   />
-                  <input
-                    placeholder="카테고리"
+                  <select
+                    aria-label="카테고리"
                     value={menuForm.category}
                     onChange={(event) => setMenuForm({ ...menuForm, category: event.target.value })}
-                  />
+                  >
+                    <option value="">카테고리 선택</option>
+                    {menuCategoryOptions.map((category) => (
+                      <option key={category.value} value={category.value}>
+                        {category.label}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     placeholder="가격"
                     type="number"
@@ -302,6 +465,55 @@ export function AdminPage() {
                     value={menuForm.imageUrl}
                     onChange={(event) => setMenuForm({ ...menuForm, imageUrl: event.target.value })}
                   />
+                  <section className="admin-option-editor">
+                    <div className="admin-option-editor__header">
+                      <strong>옵션</strong>
+                      <button className="secondary-button" type="button" onClick={handleAddOptionGroup}>
+                        + 옵션 그룹 추가
+                      </button>
+                    </div>
+
+                    {menuForm.optionGroups.map((group) => (
+                      <div className="admin-option-group" key={group.id}>
+                        <input
+                          placeholder="옵션 이름 예: 온도, 당도"
+                          value={group.name}
+                          onChange={(event) => handleUpdateOptionGroup(group.id, event.target.value)}
+                        />
+                        {group.options.map((option) => (
+                          <div className="admin-option-row" key={option.id}>
+                            <input
+                              placeholder="선택지 예: ICE, 달게"
+                              value={option.label}
+                              onChange={(event) =>
+                                handleUpdateOption(group.id, option.id, 'label', event.target.value)
+                              }
+                            />
+                            <input
+                              aria-label="추가 금액"
+                              type="number"
+                              value={option.priceDelta}
+                              onChange={(event) =>
+                                handleUpdateOption(
+                                  group.id,
+                                  option.id,
+                                  'priceDelta',
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => handleAddOption(group.id)}
+                        >
+                          + 선택지 추가
+                        </button>
+                      </div>
+                    ))}
+                  </section>
                   <button className="primary-button" type="submit">
                     {editingMenuId ? '수정 저장' : '메뉴 저장'}
                   </button>
@@ -341,6 +553,58 @@ export function AdminPage() {
         </div>
 
         <div className="history-results">
+          {isUnlocked && (
+            <section className="admin-calendar">
+              <header>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => handleMonthChange(-1)}
+                >
+                  이전
+                </button>
+                <strong>
+                  {visibleMonth.getFullYear()}년 {visibleMonth.getMonth() + 1}월
+                </strong>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => handleMonthChange(1)}
+                >
+                  다음
+                </button>
+              </header>
+
+              <div className="admin-calendar__weekdays">
+                {weekdays.map((weekday) => (
+                  <span key={weekday}>{weekday}</span>
+                ))}
+              </div>
+
+              <div className="admin-calendar__days">
+                {monthDays.map((date, index) =>
+                  date ? (
+                    <button
+                      className={[
+                        getDateKey(date) === selectedDateKey ? 'is-selected' : '',
+                        getDateKey(date) === todayKey ? 'is-today' : ''
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      type="button"
+                      key={getDateKey(date)}
+                      onClick={() => handleSelectDate(date)}
+                    >
+                      {date.getDate()}
+                    </button>
+                  ) : (
+                    <span key={`blank-${index}`} />
+                  )
+                )}
+              </div>
+            </section>
+          )}
+
           {isUnlocked && orders.length > 0 && (
             <button className="danger-button" type="button" onClick={handleDeleteAllOrders}>
               전체 주문 삭제
@@ -354,64 +618,90 @@ export function AdminPage() {
             </section>
           )}
 
-          {orders.map((order) => (
-            <article className="history-card" key={order.orderId}>
-              <header>
-                <div>
-                  <p>주문 번호 #{order.orderId}</p>
-                  <h2>{formatOrderStatus(order.status)}</h2>
-                </div>
-                <span>{formatDate(order.createdAt)}</span>
-              </header>
-
-              <div className="admin-order-meta">
-                <span>전화번호</span>
-                <strong>{order.phoneNumber}</strong>
-              </div>
-
-              <div className="checkout-items">
-                {order.items.map((item) => (
-                  <div className="checkout-item" key={item.itemId}>
-                    <div>
-                      <strong>{item.menuName}</strong>
-                      <p>
-                        {item.temperature} / {item.size} / {item.quantity}잔
-                      </p>
-                    </div>
-                    <span>{item.totalPrice.toLocaleString()}원</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="checkout-total">
-                <span>총 금액</span>
-                <strong>{order.totalPrice.toLocaleString()}원</strong>
-              </div>
-
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => handleDelete(order.orderId)}
-              >
-                주문 삭제
-              </button>
-            </article>
-          ))}
-
           {isUnlocked && orders.length > 0 && (
-            <section className="sales-summary">
-              <div>
-                <span>판매 주문</span>
-                <strong>{salesSummary.orderCount}건</strong>
+            <section className="daily-sales-panel">
+              <button
+                className="daily-sales-toggle"
+                type="button"
+                onClick={() => setIsDailySalesOpen((isOpen) => !isOpen)}
+              >
+                <span>{isDailySalesOpen ? '당일 판매내역 접기' : '당일 판매내역 펼치기'}</span>
+                <strong>{isDailySalesOpen ? '-' : '+'}</strong>
+              </button>
+
+              <div className="sales-summary">
+                <div>
+                  <span>선택 날짜</span>
+                  <strong>{selectedDateKey}</strong>
+                </div>
+                <div>
+                  <span>판매 주문</span>
+                  <strong>{dailySalesSummary.orderCount}건</strong>
+                </div>
+                <div>
+                  <span>판매 수량</span>
+                  <strong>{dailySalesSummary.itemQuantity}잔</strong>
+                </div>
+                <div>
+                  <span>총 판매 금액</span>
+                  <strong>{dailySalesSummary.totalSales.toLocaleString()}원</strong>
+                </div>
               </div>
-              <div>
-                <span>판매 수량</span>
-                <strong>{salesSummary.itemQuantity}잔</strong>
-              </div>
-              <div>
-                <span>총 판매 금액</span>
-                <strong>{salesSummary.totalSales.toLocaleString()}원</strong>
-              </div>
+
+              {isDailySalesOpen && (
+                <div className="daily-sales-list">
+                  {dailyOrders.length === 0 ? (
+                    <section className="empty-cart">
+                      <h2>선택한 날짜의 판매내역이 없습니다</h2>
+                      <p>달력에서 다른 날짜를 선택해보세요.</p>
+                    </section>
+                  ) : (
+                    dailyOrders.map((order) => (
+                      <article className="history-card" key={order.orderId}>
+                        <header>
+                          <div>
+                            <p>주문 번호 #{order.orderId}</p>
+                            <h2>{formatOrderStatus(order.status)}</h2>
+                          </div>
+                          <span>{formatDate(order.createdAt)}</span>
+                        </header>
+
+                        <div className="admin-order-meta">
+                          <span>전화번호</span>
+                          <strong>{order.phoneNumber}</strong>
+                        </div>
+
+                        <div className="checkout-items">
+                          {order.items.map((item) => (
+                            <div className="checkout-item" key={item.itemId}>
+                              <div>
+                                <strong>{item.menuName}</strong>
+                                <p>
+                                  {formatOrderItemOptions(item)} / {item.quantity}잔
+                                </p>
+                              </div>
+                              <span>{item.totalPrice.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="checkout-total">
+                          <span>총 금액</span>
+                          <strong>{order.totalPrice.toLocaleString()}원</strong>
+                        </div>
+
+                        <button
+                          className="danger-button"
+                          type="button"
+                          onClick={() => handleDelete(order.orderId)}
+                        >
+                          주문 삭제
+                        </button>
+                      </article>
+                    ))
+                  )}
+                </div>
+              )}
             </section>
           )}
         </div>

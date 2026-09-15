@@ -1,14 +1,11 @@
 import type { Request, Response } from 'express';
 import { pool } from '../db/pool.js';
+import { groupOrderRows, type OrderItemJoinRow } from '../utils/orderMapper.js';
 
 type CreateOrderItemBody = {
   menuId: number;
-  menuName: string;
-  temperature: string;
-  size: string;
+  selectedOptions?: SelectedOptionBody[];
   quantity: number;
-  unitPrice: number;
-  totalPrice: number;
 };
 
 type CreateOrderBody = {
@@ -18,34 +15,75 @@ type CreateOrderBody = {
   orderType?: 'user' | 'admin';
 };
 
-type OrderItemRow = {
-  orderId: number;
-  status: string;
-  orderTotalPrice: number;
-  createdAt: Date;
-  itemId: number;
+type MenuPriceRow = {
+  id: number;
+  name: string;
+  price: number;
+  optionGroups: MenuOptionGroup[];
+};
+
+type MenuOption = {
+  id: string;
+  label: string;
+  priceDelta: number;
+};
+
+type MenuOptionGroup = {
+  id: string;
+  name: string;
+  options: MenuOption[];
+};
+
+type SelectedOptionBody = {
+  groupId: string;
+  optionId: string;
+};
+
+type SelectedOption = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionLabel: string;
+  priceDelta: number;
+};
+
+type CalculatedOrderItem = {
+  menuId: number;
   menuName: string;
   temperature: string;
   size: string;
+  selectedOptions: SelectedOption[];
   quantity: number;
   unitPrice: number;
-  itemTotalPrice: number;
+  totalPrice: number;
 };
 
 function isValidOrderItem(item: CreateOrderItemBody) {
   return (
     Number.isInteger(item.menuId) &&
-    typeof item.menuName === 'string' &&
-    item.menuName.trim().length > 0 &&
-    ['HOT', 'ICE'].includes(item.temperature) &&
-    ['REGULAR', 'LARGE'].includes(item.size) &&
+    Array.isArray(item.selectedOptions) &&
     Number.isInteger(item.quantity) &&
-    item.quantity > 0 &&
-    Number.isInteger(item.unitPrice) &&
-    item.unitPrice >= 0 &&
-    Number.isInteger(item.totalPrice) &&
-    item.totalPrice >= 0
+    item.quantity > 0
   );
+}
+
+function resolveSelectedOptions(menu: MenuPriceRow, selectedOptions: SelectedOptionBody[]) {
+  return menu.optionGroups.map<SelectedOption>((group) => {
+    const selectedOptionId = selectedOptions.find((option) => option.groupId === group.id)?.optionId;
+    const selectedOption = group.options.find((option) => option.id === selectedOptionId);
+
+    if (!selectedOption) {
+      throw new Error('주문 옵션 형식이 올바르지 않습니다.');
+    }
+
+    return {
+      groupId: group.id,
+      groupName: group.name,
+      optionId: selectedOption.id,
+      optionLabel: selectedOption.label,
+      priceDelta: selectedOption.priceDelta
+    };
+  });
 }
 
 export async function createOrder(request: Request, response: Response) {
@@ -66,16 +104,56 @@ export async function createOrder(request: Request, response: Response) {
     return;
   }
 
-  const calculatedTotalPrice = items.reduce((sum, item) => sum + item.totalPrice, 0);
-
-  if (totalPrice !== calculatedTotalPrice) {
-    response.status(400).json({ message: '총 주문 금액이 올바르지 않습니다.' });
-    return;
-  }
-
   const client = await pool.connect();
 
   try {
+    const menuIds = [...new Set(items.map((item) => item.menuId))];
+    const menuResult = await client.query<MenuPriceRow>(
+      `
+        SELECT id, name, price, option_groups AS "optionGroups"
+        FROM menus
+        WHERE id = ANY($1::int[]) AND is_available = true
+      `,
+      [menuIds]
+    );
+    const menuMap = new Map(menuResult.rows.map((menu) => [menu.id, menu]));
+
+    if (menuMap.size !== menuIds.length) {
+      response.status(400).json({ message: '주문할 수 없는 메뉴가 포함되어 있습니다.' });
+      return;
+    }
+
+    const calculatedItems: CalculatedOrderItem[] = items.map((item) => {
+      const menu = menuMap.get(item.menuId);
+
+      if (!menu) {
+        throw new Error('메뉴 정보를 계산하지 못했습니다.');
+      }
+
+      const selectedOptions = resolveSelectedOptions(menu, item.selectedOptions ?? []);
+      const optionPrice = selectedOptions.reduce((sum, option) => sum + option.priceDelta, 0);
+      const temperatureOption =
+        selectedOptions.find((option) => option.groupId === 'temperature') ?? selectedOptions[0];
+      const sizeOption = selectedOptions.find((option) => option.groupId === 'size') ?? selectedOptions[1];
+
+      return {
+        menuId: item.menuId,
+        menuName: menu.name,
+        temperature: temperatureOption?.optionLabel ?? '-',
+        size: sizeOption?.optionLabel ?? '-',
+        selectedOptions,
+        quantity: item.quantity,
+        unitPrice: menu.price + optionPrice,
+        totalPrice: (menu.price + optionPrice) * item.quantity
+      };
+    });
+    const calculatedTotalPrice = calculatedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+
+    if (totalPrice !== calculatedTotalPrice) {
+      response.status(400).json({ message: '총 주문 금액이 올바르지 않습니다.' });
+      return;
+    }
+
     await client.query('BEGIN');
 
     let orderResult;
@@ -115,7 +193,7 @@ export async function createOrder(request: Request, response: Response) {
 
     const order = orderResult.rows[0];
 
-    for (const item of items) {
+    for (const item of calculatedItems) {
       if (orderType === 'admin') {
         await client.query(
           `
@@ -125,11 +203,12 @@ export async function createOrder(request: Request, response: Response) {
               menu_name,
               temperature,
               size,
+              selected_options,
               quantity,
               unit_price,
               total_price
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `,
           [
             order.id,
@@ -137,6 +216,7 @@ export async function createOrder(request: Request, response: Response) {
             item.menuName,
             item.temperature,
             item.size,
+            JSON.stringify(item.selectedOptions),
             item.quantity,
             item.unitPrice,
             item.totalPrice
@@ -151,11 +231,12 @@ export async function createOrder(request: Request, response: Response) {
               menu_name,
               temperature,
               size,
+              selected_options,
               quantity,
               unit_price,
               total_price
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `,
           [
             order.id,
@@ -163,6 +244,7 @@ export async function createOrder(request: Request, response: Response) {
             item.menuName,
             item.temperature,
             item.size,
+            JSON.stringify(item.selectedOptions),
             item.quantity,
             item.unitPrice,
             item.totalPrice
@@ -198,7 +280,7 @@ export async function getOrders(request: Request, response: Response) {
   }
 
   try {
-    const result = await pool.query<OrderItemRow>(
+    const result = await pool.query<OrderItemJoinRow>(
       `
         SELECT
           o.id AS "orderId",
@@ -209,6 +291,7 @@ export async function getOrders(request: Request, response: Response) {
           oi.menu_name AS "menuName",
           oi.temperature,
           oi.size,
+          oi.selected_options AS "selectedOptions",
           oi.quantity,
           oi.unit_price AS "unitPrice",
           oi.total_price AS "itemTotalPrice"
@@ -221,48 +304,7 @@ export async function getOrders(request: Request, response: Response) {
       [phoneNumber]
     );
 
-    const orders = result.rows.reduce<
-      Array<{
-        orderId: number;
-        status: string;
-        totalPrice: number;
-        createdAt: Date;
-        items: Array<{
-          itemId: number;
-          menuName: string;
-          temperature: string;
-          size: string;
-          quantity: number;
-          unitPrice: number;
-          totalPrice: number;
-        }>;
-      }>
-    >((orderList, row) => {
-      let order = orderList.find((currentOrder) => currentOrder.orderId === row.orderId);
-
-      if (!order) {
-        order = {
-          orderId: row.orderId,
-          status: row.status,
-          totalPrice: row.orderTotalPrice,
-          createdAt: row.createdAt,
-          items: []
-        };
-        orderList.push(order);
-      }
-
-      order.items.push({
-        itemId: row.itemId,
-        menuName: row.menuName,
-        temperature: row.temperature,
-        size: row.size,
-        quantity: row.quantity,
-        unitPrice: row.unitPrice,
-        totalPrice: row.itemTotalPrice
-      });
-
-      return orderList;
-    }, []);
+    const orders = groupOrderRows(result.rows);
 
     response.json(orders);
   } catch (error) {

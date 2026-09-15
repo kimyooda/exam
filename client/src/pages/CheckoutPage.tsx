@@ -4,6 +4,10 @@ import { createOrder } from '../api/orderApi';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 
+function formatOptions(options: Array<{ groupName: string; optionLabel: string }>) {
+  return options.map((option) => `${option.groupName}: ${option.optionLabel}`).join(' / ');
+}
+
 type CompletedOrder = {
   orderId: number;
   ownerLabel: string;
@@ -131,7 +135,7 @@ export function CheckoutPage() {
                   <div>
                     <strong>{item.menuName}</strong>
                     <p>
-                      {item.temperature} / {item.size} / {item.quantity}잔
+                      {formatOptions(item.selectedOptions)} / {item.quantity}잔
                     </p>
                   </div>
                   <span>{item.totalPrice.toLocaleString()}원</span>

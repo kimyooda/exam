@@ -11,6 +11,7 @@ export async function getMenus(_request: Request, response: Response) {
         category,
         price,
         image_url AS "imageUrl",
+        option_groups AS "optionGroups",
         is_available AS "isAvailable"
       FROM menus
       WHERE is_available = true
@@ -42,9 +43,10 @@ export async function getMenuById(request: Request, response: Response) {
           category,
           price,
           image_url AS "imageUrl",
+          option_groups AS "optionGroups",
           is_available AS "isAvailable"
         FROM menus
-        WHERE id = $1
+        WHERE id = $1 AND is_available = true
       `,
       [menuId]
     );

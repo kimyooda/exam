@@ -1,4 +1,4 @@
-import type { Menu } from '../types/menu';
+import type { Menu, MenuOptionGroup } from '../types/menu';
 
 export async function fetchMenus(): Promise<Menu[]> {
   const response = await fetch('/api/menus');
@@ -27,6 +27,7 @@ type CreateAdminMenuRequest = {
   category: string;
   price: number;
   imageUrl: string;
+  optionGroups: MenuOptionGroup[];
 };
 
 export async function createAdminMenu(menu: CreateAdminMenuRequest): Promise<Menu> {

@@ -1,6 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 
+function formatOptions(options: Array<{ groupName: string; optionLabel: string }>) {
+  return options.map((option) => `${option.groupName}: ${option.optionLabel}`).join(' / ');
+}
+
 export function CartPage() {
   const navigate = useNavigate();
   const { items, totalPrice, removeItem, clearCart } = useCart();
@@ -32,7 +36,7 @@ export function CartPage() {
                 <div>
                   <h2>{item.menuName}</h2>
                   <p>
-                    {item.temperature} / {item.size} / {item.quantity}잔
+                    {formatOptions(item.selectedOptions)} / {item.quantity}잔
                   </p>
                   <span>개당 {item.unitPrice.toLocaleString()}원</span>
                 </div>

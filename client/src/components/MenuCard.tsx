@@ -12,7 +12,6 @@ export function MenuCard({ menu }: MenuCardProps) {
         {menu.imageUrl ? <img src={menu.imageUrl} alt={menu.name} /> : <span>Drink</span>}
       </div>
       <div className="menu-card__body">
-        <p className="menu-card__category">{menu.category}</p>
         <h2>{menu.name}</h2>
         <strong>{menu.price.toLocaleString()}원</strong>
       </div>

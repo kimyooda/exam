@@ -3,6 +3,18 @@ import { Link } from 'react-router-dom';
 import { fetchOrdersByPhoneNumber, type OrderHistory } from '../api/orderApi';
 import { useAuth } from '../context/AuthContext';
 
+function formatOptions(options: Array<{ groupName: string; optionLabel: string }>) {
+  return options.map((option) => `${option.groupName}: ${option.optionLabel}`).join(' / ');
+}
+
+function formatOrderItemOptions(item: {
+  selectedOptions: Array<{ groupName: string; optionLabel: string }>;
+  temperature: string;
+  size: string;
+}) {
+  return item.selectedOptions.length > 0 ? formatOptions(item.selectedOptions) : `${item.temperature} / ${item.size}`;
+}
+
 function formatOrderStatus(status: string) {
   if (status === 'completed') {
     return '주문 완료';
@@ -124,7 +136,7 @@ export function OrderHistoryPage() {
                     <div>
                       <strong>{item.menuName}</strong>
                       <p>
-                        {item.temperature} / {item.size} / {item.quantity}잔
+                        {formatOrderItemOptions(item)} / {item.quantity}잔
                       </p>
                     </div>
                     <span>{item.totalPrice.toLocaleString()}원</span>

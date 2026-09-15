@@ -1,4 +1,5 @@
 import type { CartItem } from '../types/cart';
+import type { SelectedOption } from '../types/cart';
 
 type CreateOrderRequest = {
   phoneNumber: string;
@@ -20,6 +21,7 @@ export type OrderHistoryItem = {
   menuName: string;
   temperature: string;
   size: string;
+  selectedOptions: SelectedOption[];
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -51,12 +53,8 @@ export async function createOrder({
       totalPrice,
       items: items.map((item) => ({
         menuId: item.menuId,
-        menuName: item.menuName,
-        temperature: item.temperature,
-        size: item.size,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice
+        selectedOptions: item.selectedOptions,
+        quantity: item.quantity
       }))
     })
   });

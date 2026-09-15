@@ -1,21 +1,11 @@
 import type { Request, Response } from 'express';
 import { pool } from '../db/pool.js';
+import { groupOrderRows, type OrderItemJoinRow } from '../utils/orderMapper.js';
 
 const adminCode = 'knda123';
 
-type AdminOrderItemRow = {
-  orderId: number;
+type AdminOrderItemRow = OrderItemJoinRow & {
   phoneNumber: string;
-  status: string;
-  orderTotalPrice: number;
-  createdAt: Date;
-  itemId: number;
-  menuName: string;
-  temperature: string;
-  size: string;
-  quantity: number;
-  unitPrice: number;
-  itemTotalPrice: number;
 };
 
 type CreateMenuBody = {
@@ -25,7 +15,37 @@ type CreateMenuBody = {
   category?: string;
   price?: number;
   imageUrl?: string;
+  optionGroups?: unknown;
 };
+
+function isValidOptionGroups(value: unknown) {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  if (value.length === 0) {
+    return true;
+  }
+
+  return value.every(
+    (group) =>
+      typeof group?.id === 'string' &&
+      group.id.trim().length > 0 &&
+      typeof group?.name === 'string' &&
+      group.name.trim().length > 0 &&
+      Array.isArray(group.options) &&
+      group.options.length > 0 &&
+      group.options.every(
+        (option: unknown) =>
+          typeof (option as { id?: unknown }).id === 'string' &&
+          String((option as { id?: unknown }).id).trim().length > 0 &&
+          typeof (option as { label?: unknown }).label === 'string' &&
+          String((option as { label?: unknown }).label).trim().length > 0 &&
+          Number.isInteger(Number((option as { priceDelta?: unknown }).priceDelta)) &&
+          Number((option as { priceDelta?: unknown }).priceDelta) >= 0
+      )
+  );
+}
 
 function isAdminCodeValid(value: unknown) {
   return String(value ?? '').trim() === adminCode;
@@ -49,6 +69,7 @@ export async function getAdminOrders(request: Request, response: Response) {
         oi.menu_name AS "menuName",
         oi.temperature,
         oi.size,
+        oi.selected_options AS "selectedOptions",
         oi.quantity,
         oi.unit_price AS "unitPrice",
         oi.total_price AS "itemTotalPrice"
@@ -58,50 +79,7 @@ export async function getAdminOrders(request: Request, response: Response) {
       ORDER BY o.created_at DESC, oi.id ASC
     `);
 
-    const orders = result.rows.reduce<
-      Array<{
-        orderId: number;
-        phoneNumber: string;
-        status: string;
-        totalPrice: number;
-        createdAt: Date;
-        items: Array<{
-          itemId: number;
-          menuName: string;
-          temperature: string;
-          size: string;
-          quantity: number;
-          unitPrice: number;
-          totalPrice: number;
-        }>;
-      }>
-    >((orderList, row) => {
-      let order = orderList.find((currentOrder) => currentOrder.orderId === row.orderId);
-
-      if (!order) {
-        order = {
-          orderId: row.orderId,
-          phoneNumber: row.phoneNumber,
-          status: row.status,
-          totalPrice: row.orderTotalPrice,
-          createdAt: row.createdAt,
-          items: []
-        };
-        orderList.push(order);
-      }
-
-      order.items.push({
-        itemId: row.itemId,
-        menuName: row.menuName,
-        temperature: row.temperature,
-        size: row.size,
-        quantity: row.quantity,
-        unitPrice: row.unitPrice,
-        totalPrice: row.itemTotalPrice
-      });
-
-      return orderList;
-    }, []);
+    const orders = groupOrderRows(result.rows);
 
     response.json(orders);
   } catch (error) {
@@ -154,7 +132,8 @@ export async function deleteAllAdminOrders(request: Request, response: Response)
 }
 
 export async function createAdminMenu(request: Request, response: Response) {
-  const { adminCode: code, name, description, category, price, imageUrl } = request.body as CreateMenuBody;
+  const { adminCode: code, name, description, category, price, imageUrl, optionGroups } =
+    request.body as CreateMenuBody;
 
   if (!isAdminCodeValid(code)) {
     response.status(401).json({ message: '관리자 코드가 올바르지 않습니다.' });
@@ -173,11 +152,16 @@ export async function createAdminMenu(request: Request, response: Response) {
     return;
   }
 
+  if (!isValidOptionGroups(optionGroups ?? [])) {
+    response.status(400).json({ message: '메뉴 옵션 형식이 올바르지 않습니다.' });
+    return;
+  }
+
   try {
     const result = await pool.query(
       `
-        INSERT INTO menus (name, description, category, price, image_url, is_available)
-        VALUES ($1, $2, $3, $4, $5, true)
+        INSERT INTO menus (name, description, category, price, image_url, option_groups, is_available)
+        VALUES ($1, $2, $3, $4, $5, $6, true)
         RETURNING
           id,
           name,
@@ -185,9 +169,17 @@ export async function createAdminMenu(request: Request, response: Response) {
           category,
           price,
           image_url AS "imageUrl",
+          option_groups AS "optionGroups",
           is_available AS "isAvailable"
       `,
-      [name.trim(), description.trim(), category.trim(), menuPrice, imageUrl?.trim() || null]
+      [
+        name.trim(),
+        description.trim(),
+        category.trim(),
+        menuPrice,
+        imageUrl?.trim() || null,
+        JSON.stringify(optionGroups ?? [])
+      ]
     );
 
     response.status(201).json(result.rows[0]);
@@ -198,7 +190,8 @@ export async function createAdminMenu(request: Request, response: Response) {
 }
 
 export async function updateAdminMenu(request: Request, response: Response) {
-  const { adminCode: code, name, description, category, price, imageUrl } = request.body as CreateMenuBody;
+  const { adminCode: code, name, description, category, price, imageUrl, optionGroups } =
+    request.body as CreateMenuBody;
 
   if (!isAdminCodeValid(code)) {
     response.status(401).json({ message: '관리자 코드가 올바르지 않습니다.' });
@@ -224,6 +217,11 @@ export async function updateAdminMenu(request: Request, response: Response) {
     return;
   }
 
+  if (!isValidOptionGroups(optionGroups ?? [])) {
+    response.status(400).json({ message: '메뉴 옵션 형식이 올바르지 않습니다.' });
+    return;
+  }
+
   try {
     const result = await pool.query(
       `
@@ -233,8 +231,9 @@ export async function updateAdminMenu(request: Request, response: Response) {
           description = $2,
           category = $3,
           price = $4,
-          image_url = $5
-        WHERE id = $6
+          image_url = $5,
+          option_groups = $6
+        WHERE id = $7
         RETURNING
           id,
           name,
@@ -242,9 +241,18 @@ export async function updateAdminMenu(request: Request, response: Response) {
           category,
           price,
           image_url AS "imageUrl",
+          option_groups AS "optionGroups",
           is_available AS "isAvailable"
       `,
-      [name.trim(), description.trim(), category.trim(), menuPrice, imageUrl?.trim() || null, menuId]
+      [
+        name.trim(),
+        description.trim(),
+        category.trim(),
+        menuPrice,
+        imageUrl?.trim() || null,
+        JSON.stringify(optionGroups ?? []),
+        menuId
+      ]
     );
 
     if (result.rowCount === 0) {

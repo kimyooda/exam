@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS menus (
   category VARCHAR(50) NOT NULL,
   price INTEGER NOT NULL CHECK (price >= 0),
   image_url TEXT,
+  option_groups JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_available BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   menu_name VARCHAR(100) NOT NULL,
   temperature VARCHAR(10) NOT NULL,
   size VARCHAR(20) NOT NULL,
+  selected_options JSONB NOT NULL DEFAULT '[]'::jsonb,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
   total_price INTEGER NOT NULL CHECK (total_price >= 0)
@@ -50,6 +52,7 @@ CREATE TABLE IF NOT EXISTS admin_order_items (
   menu_name VARCHAR(100) NOT NULL,
   temperature VARCHAR(10) NOT NULL,
   size VARCHAR(20) NOT NULL,
+  selected_options JSONB NOT NULL DEFAULT '[]'::jsonb,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
   total_price INTEGER NOT NULL CHECK (total_price >= 0)

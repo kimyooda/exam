@@ -3,17 +3,32 @@ import { Link, useParams } from 'react-router-dom';
 import { fetchMenu } from '../api/menuApi';
 import { CartSidebar } from '../components/CartSidebar';
 import { useCart } from '../context/CartContext';
-import type { DrinkSize, Temperature } from '../types/cart';
-import type { Menu } from '../types/menu';
+import type { Menu, MenuOptionGroup } from '../types/menu';
 
-const largeSizeExtraPrice = 500;
+const defaultOptionGroups: MenuOptionGroup[] = [
+  {
+    id: 'temperature',
+    name: '온도',
+    options: [
+      { id: 'hot', label: 'HOT', priceDelta: 0 },
+      { id: 'ice', label: 'ICE', priceDelta: 0 }
+    ]
+  },
+  {
+    id: 'size',
+    name: '사이즈',
+    options: [
+      { id: 'regular', label: 'Regular', priceDelta: 0 },
+      { id: 'large', label: 'Large', priceDelta: 500 }
+    ]
+  }
+];
 
 export function MenuDetailPage() {
   const { id } = useParams();
   const { addItem } = useCart();
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [temperature, setTemperature] = useState<Temperature>('ICE');
-  const [size, setSize] = useState<DrinkSize>('REGULAR');
+  const [selectedOptionIds, setSelectedOptionIds] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -28,7 +43,15 @@ export function MenuDetailPage() {
 
       try {
         const menuDetail = await fetchMenu(id);
+        const optionGroups =
+          menuDetail.optionGroups.length > 0 ? menuDetail.optionGroups : defaultOptionGroups;
+
         setMenu(menuDetail);
+        setSelectedOptionIds(
+          Object.fromEntries(
+            optionGroups.map((group) => [group.id, group.options[0]?.id ?? ''])
+          )
+        );
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
       } finally {
@@ -44,8 +67,15 @@ export function MenuDetailPage() {
       return 0;
     }
 
-    return menu.price + (size === 'LARGE' ? largeSizeExtraPrice : 0);
-  }, [menu, size]);
+    const optionGroups = menu.optionGroups.length > 0 ? menu.optionGroups : defaultOptionGroups;
+    const optionPrice = optionGroups.reduce((sum, group) => {
+      const selectedOption = group.options.find((option) => option.id === selectedOptionIds[group.id]);
+
+      return sum + (selectedOption?.priceDelta ?? 0);
+    }, 0);
+
+    return menu.price + optionPrice;
+  }, [menu, selectedOptionIds]);
 
   const totalPrice = unitPrice * quantity;
 
@@ -54,11 +84,24 @@ export function MenuDetailPage() {
       return;
     }
 
+    const optionGroups = menu.optionGroups.length > 0 ? menu.optionGroups : defaultOptionGroups;
+    const selectedOptions = optionGroups.map((group) => {
+      const selectedOption =
+        group.options.find((option) => option.id === selectedOptionIds[group.id]) ?? group.options[0];
+
+      return {
+        groupId: group.id,
+        groupName: group.name,
+        optionId: selectedOption.id,
+        optionLabel: selectedOption.label,
+        priceDelta: selectedOption.priceDelta
+      };
+    });
+
     addItem({
       menuId: menu.id,
       menuName: menu.name,
-      temperature,
-      size,
+      selectedOptions,
       quantity,
       unitPrice
     });
@@ -83,6 +126,8 @@ export function MenuDetailPage() {
     );
   }
 
+  const optionGroups = menu.optionGroups.length > 0 ? menu.optionGroups : defaultOptionGroups;
+
   return (
     <main className="page">
       <Link className="text-link" to="/">
@@ -101,45 +146,29 @@ export function MenuDetailPage() {
             <p>{menu.description}</p>
             <strong className="base-price">기본 가격 {menu.price.toLocaleString()}원</strong>
 
-            <div className="option-group">
-              <h2>온도</h2>
-              <div className="segmented-control">
-                <button
-                  className={temperature === 'HOT' ? 'is-selected' : ''}
-                  type="button"
-                  onClick={() => setTemperature('HOT')}
-                >
-                  HOT
-                </button>
-                <button
-                  className={temperature === 'ICE' ? 'is-selected' : ''}
-                  type="button"
-                  onClick={() => setTemperature('ICE')}
-                >
-                  ICE
-                </button>
+            {optionGroups.map((group) => (
+              <div className="option-group" key={group.id}>
+                <h2>{group.name}</h2>
+                <div className="segmented-control">
+                  {group.options.map((option) => (
+                    <button
+                      className={selectedOptionIds[group.id] === option.id ? 'is-selected' : ''}
+                      type="button"
+                      key={option.id}
+                      onClick={() =>
+                        setSelectedOptionIds((currentOptions) => ({
+                          ...currentOptions,
+                          [group.id]: option.id
+                        }))
+                      }
+                    >
+                      {option.label}
+                      {option.priceDelta > 0 && ` +${option.priceDelta.toLocaleString()}원`}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="option-group">
-              <h2>사이즈</h2>
-              <div className="segmented-control">
-                <button
-                  className={size === 'REGULAR' ? 'is-selected' : ''}
-                  type="button"
-                  onClick={() => setSize('REGULAR')}
-                >
-                  Regular
-                </button>
-                <button
-                  className={size === 'LARGE' ? 'is-selected' : ''}
-                  type="button"
-                  onClick={() => setSize('LARGE')}
-                >
-                  Large +{largeSizeExtraPrice.toLocaleString()}원
-                </button>
-              </div>
-            </div>
+            ))}
 
             <div className="option-group">
               <h2>수량</h2>

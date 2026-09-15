@@ -19,13 +19,19 @@ type CartProviderProps = {
 export function CartProvider({ children }: CartProviderProps) {
   const [items, setItems] = useState<CartItem[]>([]);
 
+  function getOptionKey(item: Pick<CartItem, 'selectedOptions'>) {
+    return item.selectedOptions
+      .map((option) => `${option.groupId}:${option.optionId}`)
+      .sort()
+      .join('|');
+  }
+
   function addItem(item: AddCartItemInput) {
     setItems((currentItems) => {
       const sameOptionItem = currentItems.find(
         (currentItem) =>
           currentItem.menuId === item.menuId &&
-          currentItem.temperature === item.temperature &&
-          currentItem.size === item.size &&
+          getOptionKey(currentItem) === getOptionKey(item) &&
           currentItem.unitPrice === item.unitPrice
       );
 
